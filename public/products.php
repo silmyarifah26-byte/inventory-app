@@ -10,37 +10,40 @@ $user = current_user();
 $errors = [];
 $success = '';
 
-// Handling Tambah / Edit Produk
+// Ambil kata kunci pencarian jika ada
+$search = trim($_GET['search'] ?? '');
+
+// Proses Tambah / Edit Produk
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    $category_id = trim($_POST['category_id'] ?? '');
+    $category_id = $_POST['category_id'] ?? '';
     $name = trim($_POST['name'] ?? '');
     $sku = trim($_POST['sku'] ?? '');
-    $stock = trim($_POST['stock'] ?? '');
-    $minimum_stock = trim($_POST['minimum_stock'] ?? '');
-    $price = trim($_POST['price'] ?? '');
+    $stock = $_POST['stock'] ?? 0;
+    $minimum_stock = $_POST['minimum_stock'] ?? 5;
+    $price = $_POST['price'] ?? 0;
     $id = $_POST['id'] ?? null;
 
-    if (empty($name) || empty($category_id) || empty($sku) || $stock === '' || $price === '') {
-        $errors[] = "Semua kolom yang wajib bertanda bintang (*) harus diisi!";
+    if (empty($name) || empty($sku) || empty($category_id)) {
+        $errors[] = "Kategori, Nama Produk, dan SKU wajib diisi!";
     } else {
         try {
             if ($action === 'create') {
                 $stmt = $pdo->prepare("INSERT INTO products (category_id, name, sku, stock, minimum_stock, price) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$category_id, $name, $sku, $stock, $minimum_stock ?: 5, $price]);
+                $stmt->execute([$category_id, $name, $sku, $stock, $minimum_stock, $price]);
                 $success = "Produk berhasil ditambahkan!";
             } elseif ($action === 'update' && $id) {
                 $stmt = $pdo->prepare("UPDATE products SET category_id = ?, name = ?, sku = ?, stock = ?, minimum_stock = ?, price = ? WHERE id = ?");
-                $stmt->execute([$category_id, $name, $sku, $stock, $minimum_stock ?: 5, $price, $id]);
+                $stmt->execute([$category_id, $name, $sku, $stock, $minimum_stock, $price, $id]);
                 $success = "Produk berhasil diperbarui!";
             }
         } catch (PDOException $e) {
-            $errors[] = "Gagal menyimpan produk (Kemungkinan SKU sudah terdaftar): " . $e->getMessage();
+            $errors[] = "Gagal menyimpan produk (kemungkinan SKU sudah terdaftar): " . $e->getMessage();
         }
     }
 }
 
-// Handling Hapus Produk
+// Proses Hapus Produk
 if (isset($_GET['delete'])) {
     $delete_id = $_GET['delete'];
     try {
@@ -57,7 +60,7 @@ if (isset($_GET['status']) && $_GET['status'] === 'deleted') {
     $success = "Produk berhasil dihapus!";
 }
 
-// Ambil data untuk form edit jika ada query string ?edit=ID
+// Ambil data untuk form edit jika ada ?edit=ID
 $editData = null;
 if (isset($_GET['edit'])) {
     $stmt = $pdo->prepare("SELECT * FROM products WHERE id = ?");
@@ -65,16 +68,28 @@ if (isset($_GET['edit'])) {
     $editData = $stmt->fetch();
 }
 
-// Ambil daftar kategori untuk pilihan dropdown
+// Ambil daftar kategori untuk dropdown select
 $categories = $pdo->query("SELECT * FROM categories ORDER BY name ASC")->fetchAll();
 
-// Ambil daftar seluruh produk beserta nama kategorinya menggunakan JOIN
-$products = $pdo->query("
-    SELECT products.*, categories.name AS category_name 
-    FROM products 
-    LEFT JOIN categories ON products.category_id = categories.id 
-    ORDER BY products.id DESC
-")->fetchAll();
+// Ambil daftar produk dengan fitur pencarian (Search) dan relasi ke kategori
+if (!empty($search)) {
+    $stmtProducts = $pdo->prepare("
+        SELECT products.*, categories.name AS category_name 
+        FROM products 
+        JOIN categories ON products.category_id = categories.id 
+        WHERE products.name LIKE ? OR products.sku LIKE ? 
+        ORDER BY products.id DESC
+    ");
+    $stmtProducts->execute(["%$search%", "%$search%"]);
+    $products = $stmtProducts->fetchAll();
+} else {
+    $products = $pdo->query("
+        SELECT products.*, categories.name AS category_name 
+        FROM products 
+        JOIN categories ON products.category_id = categories.id 
+        ORDER BY products.id DESC
+    ")->fetchAll();
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -89,8 +104,8 @@ $products = $pdo->query("
         .form-group { margin-bottom: 12px; }
         label { display: block; margin-bottom: 4px; font-weight: bold; font-size: 0.9rem; }
         input[type="text"], input[type="number"], select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0056b3; }
+        button { padding: 10px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #218838; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background: #f8f9fa; }
@@ -100,9 +115,11 @@ $products = $pdo->query("
         .btn-action { text-decoration: none; padding: 4px 8px; border-radius: 3px; font-size: 0.8rem; color: white; }
         .btn-edit { background: #ffc107; color: #000; }
         .btn-delete { background: #dc3545; }
-        .badge-warning { background: #fff3cd; color: #856404; padding: 3px 6px; border-radius: 4px; font-weight: bold; }
-        .top-nav { margin-bottom: 20px; }
-        .top-nav a { text-decoration: none; color: #007bff; font-weight: bold; }
+        .top-nav { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .search-box { display: flex; gap: 8px; }
+        .search-box input { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; width: 220px; }
+        .search-box button { padding: 6px 12px; background: #007bff; }
+        .search-box button:hover { background: #0056b3; }
     </style>
 </head>
 <body>
@@ -113,7 +130,18 @@ $products = $pdo->query("
     </header>
 
     <div style="max-width: 1200px; margin: 20px auto 0; padding: 0 20px;">
-        <div class="top-nav"><a href="dashboard.php">&larr; Kembali ke Dashboard</a></div>
+        <div class="top-nav">
+            <a href="dashboard.php">&larr; Kembali ke Dashboard</a>
+            
+            <!-- Form Search -->
+            <form method="GET" action="products.php" class="search-box">
+                <input type="text" name="search" placeholder="Cari nama / SKU..." value="<?= escape($search) ?>">
+                <button type="submit">Cari</button>
+                <?php if (!empty($search)): ?>
+                    <a href="products.php" style="padding: 6px 10px; background: #6c757d; color: #fff; text-decoration:none; border-radius:4px; font-size:0.9rem;">Reset</a>
+                <?php endif; ?>
+            </form>
+        </div>
         
         <?php if (!empty($errors)): ?>
             <div class="alert alert-error">
@@ -162,17 +190,17 @@ $products = $pdo->query("
 
                 <div class="form-group">
                     <label>Stok Awal *</label>
-                    <input type="number" name="stock" value="<?= escape($editData['stock'] ?? '') ?>" min="0" required>
+                    <input type="number" name="stock" value="<?= escape($editData['stock'] ?? '0') ?>" required>
                 </div>
 
                 <div class="form-group">
-                    <label>Batas Minimum Stok (Peringatan)</label>
-                    <input type="number" name="minimum_stock" value="<?= escape($editData['minimum_stock'] ?? '5') ?>" min="0">
+                    <label>Batas Minimum Stok</label>
+                    <input type="number" name="minimum_stock" value="<?= escape($editData['minimum_stock'] ?? '5') ?>">
                 </div>
 
                 <div class="form-group">
                     <label>Harga Satuan (Rp) *</label>
-                    <input type="number" name="price" value="<?= escape($editData['price'] ?? '') ?>" min="0" step="100" required>
+                    <input type="number" name="price" value="<?= escape($editData['price'] ?? '0') ?>" required>
                 </div>
 
                 <button type="submit"><?= $editData ? 'Simpan Perubahan' : 'Tambah Produk' ?></button>
@@ -184,7 +212,7 @@ $products = $pdo->query("
 
         <!-- Tabel Daftar Produk -->
         <div class="card" style="overflow-x: auto;">
-            <h3>Daftar Produk Inventaris</h3>
+            <h3>Daftar Produk Inventaris <?= !empty($search) ? '(Hasil Pencarian: "' . escape($search) . '")' : '' ?></h3>
             <table>
                 <thead>
                     <tr>
@@ -199,20 +227,15 @@ $products = $pdo->query("
                 </thead>
                 <tbody>
                     <?php if (empty($products)): ?>
-                        <tr><td colspan="7" style="text-align:center;">Belum ada data produk.</td></tr>
+                        <tr><td colspan="7" style="text-align:center;">Tidak ada data produk ditemukan.</td></tr>
                     <?php else: ?>
                         <?php foreach ($products as $index => $prod): ?>
                             <tr>
                                 <td><?= $index + 1 ?></td>
                                 <td><code><?= escape($prod['sku']) ?></code></td>
                                 <td><b><?= escape($prod['name']) ?></b></td>
-                                <td><?= escape($prod['category_name'] ?? 'Tanpa Kategori') ?></td>
-                                <td>
-                                    <?= escape($prod['stock']) ?>
-                                    <?php if ($prod['stock'] <= $prod['minimum_stock']): ?>
-                                        <br><span class="badge-warning">Stok Rendah!</span>
-                                    <?php endif; ?>
-                                </td>
+                                <td><?= escape($prod['category_name']) ?></td>
+                                <td><?= escape($prod['stock']) ?></td>
                                 <td>Rp <?= number_format($prod['price'], 0, ',', '.') ?></td>
                                 <td>
                                     <a href="products.php?edit=<?= $prod['id'] ?>" class="btn-action btn-edit">Edit</a>

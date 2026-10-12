@@ -75,8 +75,8 @@ try {
                 <a href="categories.php" class="btn btn-green">Kelola Kategori</a>
                 <a href="products.php" class="btn btn-info">Kelola Produk</a>
                 <a href="logout.php" class="btn btn-red" onclick="return confirm('Keluar dari sistem?')">Logout</a>
+                <a href="stock_movement.php" class="btn" style="background: #ffc107; color: #000;">Transaksi Stok</a></div>
             </div>
-        </div>
 
         <!-- Widget Statistik Ringkasan -->
         <div class="stats-grid">
