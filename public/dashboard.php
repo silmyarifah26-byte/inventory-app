@@ -4,81 +4,103 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/escape.php';
 
-// Pastikan user sudah login
 require_login();
 $user = current_user();
 
-// Mengambil ringkasan data untuk widget dashboard (Sesuai Slide 29)
-// 1. Total Produk
-$stmtTotalProducts = $pdo->query("SELECT COUNT(*) FROM products");
-$totalProducts = $stmtTotalProducts->fetchColumn();
+// Hitung statistik untuk widget dashboard
+try {
+    // Total Kategori
+    $stmtCat = $pdo->query("SELECT COUNT(*) FROM categories");
+    $totalCategories = $stmtCat->fetchColumn();
 
-// 2. Total Nilai Inventory (SUM(stock * price))
-$stmtInventoryValue = $pdo->query("SELECT SUM(stock * price) FROM products");
-$inventoryValue = $stmtInventoryValue->fetchColumn() ?: 0;
+    // Total Produk & Total Nilai Aset
+    $stmtProd = $pdo->query("SELECT COUNT(*), SUM(stock * price), SUM(stock) FROM products");
+    $prodData = $stmtProd->fetch(PDO::FETCH_NUM);
+    $totalProducts = $prodData[0] ?? 0;
+    $totalAssetValue = $prodData[1] ?? 0;
+    $totalStockQty = $prodData[2] ?? 0;
 
-// 3. Produk Stok Rendah (stock <= minimum_stock)
-$stmtLowStock = $pdo->query("SELECT COUNT(*) FROM products WHERE stock <= minimum_stock");
-$lowStockCount = $stmtLowStock->fetchColumn();
+    // Produk dengan stok menipis (<= minimum_stock)
+    $stmtLow = $pdo->query("SELECT COUNT(*) FROM products WHERE stock <= minimum_stock");
+    $lowStockCount = $stmtLow->fetchColumn();
+} catch (PDOException $e) {
+    $totalCategories = 0;
+    $totalProducts = 0;
+    $totalAssetValue = 0;
+    $totalStockQty = 0;
+    $lowStockCount = 0;
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard - Inventory Management System</title>
+    <title>Dashboard - Inventory System</title>
     <style>
         body { font-family: sans-serif; background: #f4f6f9; margin: 0; padding: 0; }
         header { background: #343a40; color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; }
-        header .user-info { font-size: 0.9rem; }
-        header a.logout { color: #ff6b6b; text-decoration: none; margin-left: 15px; font-weight: bold; }
-        header a.logout:hover { text-decoration: underline; }
         .container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
-        .welcome-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .widgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
-        .widget { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #007bff; }
-        .widget.warning { border-left-color: #ffc107; }
-        .widget h3 { margin: 0 0 10px 0; font-size: 1rem; color: #666; }
-        .widget .number { font-size: 1.8rem; font-weight: bold; color: #333; }
-        .nav-links { margin-top: 30px; display: flex; gap: 15px; }
-        .nav-links a { padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; font-size: 0.9rem; }
-        .nav-links a:hover { background: #0056b3; }
+        .welcome-card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #007bff; }
+        .stat-card.green { border-left-color: #28a745; }
+        .stat-card.orange { border-left-color: #ffc107; }
+        .stat-card.red { border-left-color: #dc3545; }
+        .stat-title { font-size: 0.9rem; color: #6c757d; font-weight: bold; text-transform: uppercase; }
+        .stat-value { font-size: 1.8rem; font-weight: bold; margin-top: 5px; color: #343a40; }
+        .nav-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+        .btn { padding: 10px 20px; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block; }
+        .btn-green { background: #28a745; }
+        .btn-green:hover { background: #218838; }
+        .btn-info { background: #17a2b8; }
+        .btn-info:hover { background: #138496; }
+        .btn-red { background: #dc3545; }
+        .btn-red:hover { background: #c82333; }
     </style>
 </head>
 <body>
 
     <header>
-        <h2>Inventory System</h2>
-        <div class="user-info">
-            Halo, <b><?= escape($user['username']) ?></b> (Role: <em><?= escape($user['role']) ?></em>)
-            <a href="logout.php" class="logout">Logout</a>
-        </div>
+        <h2>Inventory Management System</h2>
+        <div>Halo, <b><?= escape($user['username']) ?></b> (<i><?= escape($user['role']) ?></i>)</div>
     </header>
 
     <div class="container">
+        
         <div class="welcome-card">
-            <h3>Selamat Datang di Dashboard</h3>
-            <p>Sistem Manajemen Inventaris siap digunakan untuk memantau stok, kategori, dan transaksi barang masuk/keluar.</p>
-        </div>
-
-        <div class="widgets">
-            <div class="widget">
-                <h3>Total Produk</h3>
-                <div class="number"><?= number_format($totalProducts) ?></div>
-            </div>
-            <div class="widget">
-                <h3>Total Nilai Inventory</h3>
-                <div class="number">Rp <?= number_format($inventoryValue, 0, ',', '.') ?></div>
-            </div>
-            <div class="widget warning">
-                <h3>Produk Stok Rendah</h3>
-                <div class="number"><?= number_format($lowStockCount) ?></div>
+            <h2>Selamat Datang di Panel Utama, Baginda ratu!</h2>
+            <p>Sistem inventaris siap digunakan untuk mengelola kategori barang, stok produk, serta memantau persediaan gudang secara real-time.</p>
+            
+            <div class="nav-links">
+                <a href="categories.php" class="btn btn-green">Kelola Kategori</a>
+                <a href="products.php" class="btn btn-info">Kelola Produk</a>
+                <a href="logout.php" class="btn btn-red" onclick="return confirm('Keluar dari sistem?')">Logout</a>
             </div>
         </div>
 
-        <div class="nav-links">
-            <a href="login.php">Kembali ke Login</a>
-            <!-- Menu lain akan kita buat bertahap -->
+        <!-- Widget Statistik Ringkasan -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-title">Total Kategori</div>
+                <div class="stat-value"><?= number_format($totalCategories) ?></div>
+            </div>
+
+            <div class="stat-card green">
+                <div class="stat-title">Total Jenis Produk</div>
+                <div class="stat-value"><?= number_format($totalProducts) ?></div>
+            </div>
+
+            <div class="stat-card orange">
+                <div class="stat-title">Total Item Barang</div>
+                <div class="stat-value"><?= number_format($totalStockQty) ?> unit</div>
+            </div>
+
+            <div class="stat-card red">
+                <div class="stat-title">Stok Menipis</div>
+                <div class="stat-value"><?= number_format($lowStockCount) ?> item</div>
+            </div>
         </div>
+
     </div>
 
 </body>
